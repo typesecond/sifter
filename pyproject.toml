@@ -11,6 +11,9 @@ requires-python = ">=3.10"
 license = "MIT"
 dependencies = ["eth-account==0.14.0", "customtkinter==5.2.2"]
 
+[project.scripts]
+sifter = "sifter.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
