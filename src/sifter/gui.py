@@ -11,12 +11,14 @@ import customtkinter as ctk
 from .core import Pattern, export_keystore
 from .miner import search
 
-BG = "#111410"
-PANEL = "#1b201a"
-LINE = "#333d30"
-TEXT = "#edf0e7"
-MUTED = "#a3ad99"
-ACCENT = "#c5f277"
+from .pixels import PixelHeader, pixel_font
+
+BG = "#141627"
+PANEL = "#1e2339"
+LINE = "#46506d"
+TEXT = "#edf0df"
+MUTED = "#a2abc2"
+ACCENT = "#b9ec78"
 
 
 def duration(seconds):
@@ -35,9 +37,10 @@ class App(ctk.CTk):
     def __init__(self):
         ctk.set_appearance_mode("dark")
         super().__init__(fg_color=BG)
-        self.title("Sifter · Ethereum vanity studio")
-        self.geometry("920x780")
-        self.minsize(780, 720)
+        self.title("Sifter · Vanity address miner")
+        self.geometry("760x640")
+        self.minsize(720, 620)
+        self.display_font = pixel_font()
         self.events = queue.Queue()
         self.cancel = threading.Event()
         self.worker = None
@@ -46,76 +49,87 @@ class App(ctk.CTk):
         self.revealed = False
         self.closing = False
         self.started = 0
+        self.animation_tick = 0
         self.prefix = ctk.StringVar(value="")
         self.suffix = ctk.StringVar(value="")
         self.engine = ctk.StringVar(value="Auto")
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-        top = ctk.CTkFrame(self, fg_color=BG)
-        top.grid(row=0, column=0, sticky="ew", padx=32, pady=(25, 12))
-        self.label(top, "▦  SIFTER", 27, ACCENT).pack(side="left")
-        self.label(top, "ETHEREUM  /  LOCAL WALLET STUDIO", 11, MUTED).pack(side="right")
-        content = ctk.CTkScrollableFrame(self, fg_color=BG)
-        content.grid(row=1, column=0, sticky="nsew", padx=20)
-        content.grid_columnconfigure(0, weight=1)
-        self.label(content, "An address with your signature.", 32).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
-        self.label(content, "Choose a pattern. Sift locally. Keep the keys.", 14, MUTED).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 23))
-        config = ctk.CTkFrame(content, fg_color=PANEL, corner_radius=12)
-        config.grid(row=2, column=0, sticky="ew", padx=10)
-        config.grid_columnconfigure((0, 1), weight=1)
-        self.label(config, "01   SET YOUR PATTERN", 11, ACCENT).grid(row=0, column=0, columnspan=2, sticky="w", padx=22, pady=(20, 14))
-        self.label(config, "Starts with", 12, MUTED).grid(row=1, column=0, sticky="w", padx=22)
-        self.label(config, "Ends with", 12, MUTED).grid(row=1, column=1, sticky="w", padx=22)
-        self.prefix_entry = ctk.CTkEntry(config, textvariable=self.prefix, placeholder_text="c0ffee", height=42, border_color=LINE, fg_color=BG, font=("Menlo", 17))
-        self.prefix_entry.grid(row=2, column=0, sticky="ew", padx=(22, 8), pady=(6, 12))
-        self.suffix_entry = ctk.CTkEntry(config, textvariable=self.suffix, placeholder_text="beef", height=42, border_color=LINE, fg_color=BG, font=("Menlo", 17))
-        self.suffix_entry.grid(row=2, column=1, sticky="ew", padx=(8, 22), pady=(6, 12))
-        self.preview = self.label(config, "0x · · ·", 12, MUTED)
-        self.preview.grid(row=3, column=0, columnspan=2, sticky="w", padx=22)
-        self.difficulty = self.label(config, "Use 0–9 and A–F. Prefix, suffix, or both.", 12, MUTED)
-        self.difficulty.grid(row=4, column=0, columnspan=2, sticky="w", padx=22, pady=(6, 18))
-        self.engine_select = ctk.CTkOptionMenu(config, variable=self.engine, values=["Auto", "CPU", "GPU"], fg_color=LINE, button_color=LINE, button_hover_color="#46533f", width=125)
-        self.engine_select.grid(row=5, column=0, sticky="w", padx=22, pady=(0, 20))
-        self.start_button = ctk.CTkButton(config, text="Start sifting  →", command=self.start_search, height=40, fg_color=ACCENT, hover_color="#a9d360", text_color=BG, font=("Arial", 14, "bold"))
-        self.start_button.grid(row=5, column=1, sticky="e", padx=22, pady=(0, 20))
-        status = ctk.CTkFrame(content, fg_color=PANEL, corner_radius=12)
-        status.grid(row=3, column=0, sticky="ew", padx=10, pady=14)
-        status.grid_columnconfigure((0, 1, 2), weight=1)
-        self.label(status, "02   SEARCH SESSION", 11, ACCENT).grid(row=0, column=0, columnspan=3, sticky="w", padx=22, pady=(18, 8))
-        self.status = self.label(status, "Ready when you are.", 14)
-        self.status.grid(row=1, column=0, columnspan=3, sticky="w", padx=22, pady=(0, 10))
-        self.rate = self.label(status, "— addr/s", 20)
-        self.rate.grid(row=2, column=0, sticky="w", padx=22)
-        self.elapsed = self.label(status, "0.0s elapsed", 15, MUTED)
-        self.elapsed.grid(row=2, column=1)
-        self.estimate = self.label(status, "50% estimate: —", 12, MUTED)
-        self.estimate.grid(row=2, column=2, sticky="e", padx=22)
-        self.device = self.label(status, "Auto uses CPU for short patterns and an available GPU engine for longer ones.", 11, MUTED)
-        self.device.grid(row=3, column=0, columnspan=3, sticky="w", padx=22, pady=(10, 18))
-        result = ctk.CTkFrame(content, fg_color=PANEL, corner_radius=12)
-        result.grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 14))
+
+        header = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        header.grid(row=0, column=0, sticky="ew", padx=26, pady=(18, 8))
+        self.pixel_header = PixelHeader(header)
+        self.pixel_header.pack(side="left")
+        self.label(header, "ETHEREUM\nADDRESS MINER", 12, MUTED, pixel=True).pack(side="right")
+
+        form = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0, border_width=2, border_color=LINE)
+        form.grid(row=1, column=0, sticky="ew", padx=26)
+        form.grid_columnconfigure((0, 1), weight=1)
+        self.label(form, "STARTS WITH", 13, TEXT, pixel=True).grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
+        self.label(form, "ENDS WITH", 13, TEXT, pixel=True).grid(row=0, column=1, sticky="w", padx=18, pady=(14, 4))
+        self.prefix_entry = ctk.CTkEntry(form, textvariable=self.prefix, height=40, corner_radius=0, border_width=2, border_color=LINE, fg_color=BG, font=("Menlo", 18))
+        self.prefix_entry.grid(row=1, column=0, sticky="ew", padx=(18, 8))
+        self.suffix_entry = ctk.CTkEntry(form, textvariable=self.suffix, height=40, corner_radius=0, border_width=2, border_color=LINE, fg_color=BG, font=("Menlo", 18))
+        self.suffix_entry.grid(row=1, column=1, sticky="ew", padx=(8, 18))
+        self.difficulty = self.label(form, "Type a prefix, a suffix, or both. Use 0–9 and A–F.", 12, MUTED)
+        self.difficulty.grid(row=2, column=0, columnspan=2, sticky="w", padx=18, pady=(7, 0))
+        self.preview = self.label(form, "Example: abc … 123", 12, ACCENT, mono=True)
+        self.preview.grid(row=3, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 12))
+        self.engine_select = ctk.CTkOptionMenu(form, variable=self.engine, values=["Auto", "CPU", "GPU"], corner_radius=0, fg_color=LINE, button_color=LINE, button_hover_color="#5a6584", width=125, height=36, font=(self.display_font, 12))
+        self.engine_select.grid(row=4, column=0, sticky="w", padx=18, pady=(0, 16))
+        self.start_button = self.button(form, "FIND ADDRESS", self.start_search, primary=True, width=215, height=38)
+        self.start_button.grid(row=4, column=1, sticky="e", padx=18, pady=(0, 16))
+        self.bind("<Return>", lambda _event: self.start_search())
+
+        session = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        session.grid(row=2, column=0, sticky="ew", padx=28, pady=(12, 10))
+        session.grid_columnconfigure((0, 1, 2), weight=1)
+        self.status = self.label(session, "Ready to search.", 13)
+        self.status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 3))
+        self.rate = self.label(session, "— addr/s", 13, ACCENT, mono=True)
+        self.rate.grid(row=1, column=0, sticky="w")
+        self.elapsed = self.label(session, "0.0s elapsed", 12, MUTED)
+        self.elapsed.grid(row=1, column=1)
+        self.estimate = self.label(session, "50% estimate: —", 12, MUTED)
+        self.estimate.grid(row=1, column=2, sticky="e")
+        self.device = self.label(session, "Auto picks a search engine for you.", 11, MUTED)
+        self.device.grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 1))
+
+        result = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0, border_width=2, border_color=LINE)
+        result.grid(row=3, column=0, sticky="ew", padx=26)
         result.grid_columnconfigure(0, weight=1)
-        self.label(result, "03   YOUR MATCH", 11, ACCENT).grid(row=0, column=0, sticky="w", padx=22, pady=(18, 10))
-        self.address = self.label(result, "A verified address will appear here.", 14)
-        self.address.grid(row=1, column=0, sticky="w", padx=22)
-        self.secret = self.label(result, "Private key hidden", 11, MUTED)
-        self.secret.grid(row=2, column=0, sticky="w", padx=22, pady=(8, 12))
-        actions = ctk.CTkFrame(result, fg_color="transparent")
-        actions.grid(row=3, column=0, sticky="w", padx=22, pady=(0, 18))
-        self.copy = ctk.CTkButton(actions, text="Copy address", width=120, command=self.copy_address, fg_color=LINE, hover_color="#46533f", state="disabled")
+        self.label(result, "YOUR ADDRESS", 13, ACCENT, pixel=True).grid(row=0, column=0, sticky="w", padx=18, pady=(12, 5))
+        self.address = self.label(result, "Your match will appear here.", 13, mono=True)
+        self.address.grid(row=1, column=0, sticky="w", padx=18)
+        self.secret = self.label(result, "Private key hidden", 10, MUTED, mono=True)
+        self.secret.grid(row=2, column=0, sticky="w", padx=18, pady=(4, 9))
+        actions = ctk.CTkFrame(result, fg_color="transparent", corner_radius=0)
+        actions.grid(row=3, column=0, sticky="w", padx=18, pady=(0, 14))
+        self.copy = self.button(actions, "COPY ADDRESS", self.copy_address, width=160)
         self.copy.pack(side="left", padx=(0, 8))
-        self.reveal = ctk.CTkButton(actions, text="Reveal key", width=110, command=self.toggle_key, fg_color=LINE, hover_color="#46533f", state="disabled")
+        self.reveal = self.button(actions, "SHOW KEY", self.toggle_key, width=125)
         self.reveal.pack(side="left", padx=(0, 8))
-        self.export = ctk.CTkButton(actions, text="Export encrypted keystore", width=190, command=self.save_keystore, fg_color=ACCENT, text_color=BG, hover_color="#a9d360", state="disabled")
+        self.export = self.button(actions, "SAVE WALLET", self.save_keystore, primary=True, width=170)
         self.export.pack(side="left")
-        self.label(self, "LOCAL BY DESIGN   /   SIFTER", 10, MUTED).grid(row=2, column=0, pady=(10, 16))
+        for button in (self.copy, self.reveal, self.export):
+            button.configure(state="disabled")
+        self.label(self, "LOCAL SEARCH  /  PASSWORD-ENCRYPTED WALLET EXPORT", 10, MUTED, pixel=True).grid(row=4, column=0, pady=(13, 10))
         self.prefix.trace_add("write", self.update_pattern)
         self.suffix.trace_add("write", self.update_pattern)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.after(75, self.poll)
 
-    def label(self, parent, text, size, color=TEXT):
-        return ctk.CTkLabel(parent, text=text, text_color=color, font=("Arial", size), anchor="w")
+    def label(self, parent, text, size, color=TEXT, pixel=False, mono=False):
+        family = self.display_font if pixel else "Menlo" if mono else "Arial"
+        return ctk.CTkLabel(parent, text=text, text_color=color, font=(family, size), anchor="w")
+
+    def button(self, parent, text, command, primary=False, width=150, height=34):
+        return ctk.CTkButton(parent, text=text, command=command, width=width, height=height,
+                            corner_radius=0, border_width=2,
+                            border_color=ACCENT if primary else LINE,
+                            fg_color=ACCENT if primary else BG,
+                            hover_color="#a6d367" if primary else LINE,
+                            text_color=BG if primary else TEXT,
+                            font=(self.display_font, 12))
 
     def update_pattern(self, *_):
         try:
@@ -131,7 +145,7 @@ class App(ctk.CTk):
             return
         if self.worker and self.worker.is_alive():
             self.cancel.set()
-            self.start_button.configure(text="Stopping…", state="disabled")
+            self.start_button.configure(text="STOPPING...", state="disabled")
             return
         try:
             pattern = Pattern(self.prefix.get(), self.suffix.get())
@@ -143,7 +157,7 @@ class App(ctk.CTk):
         self.result = None
         self.revealed = False
         self.secret.configure(text="Private key hidden")
-        self.reveal.configure(text="Reveal key")
+        self.reveal.configure(text="SHOW KEY")
         self.address.configure(text="Sifting for your pattern…")
         for button in (self.copy, self.reveal, self.export):
             button.configure(state="disabled")
@@ -152,7 +166,7 @@ class App(ctk.CTk):
         self.active_pattern = pattern
         self.rate.configure(text="— addr/s")
         self.estimate.configure(text="50% estimate: —")
-        self.start_button.configure(text="Stop search", state="normal")
+        self.start_button.configure(text="STOP SEARCH", state="normal")
         self.prefix_entry.configure(state="disabled")
         self.suffix_entry.configure(state="disabled")
         self.engine_select.configure(state="disabled")
@@ -176,7 +190,7 @@ class App(ctk.CTk):
             except queue.Empty:
                 break
             if event.message:
-                (self.device if event.kind == "device" else self.status).configure(text=event.message)
+                (self.device if event.kind == "device" else self.status).configure(text=event.message.split(",")[0] if event.kind == "device" else event.message)
             if event.rate:
                 self.rate.configure(text=f"{event.rate:,.0f} addr/s")
                 self.estimate.configure(text=f"50% estimate: {duration(self.active_pattern.seconds_for(.5, event.rate))}")
@@ -190,10 +204,13 @@ class App(ctk.CTk):
             self.elapsed.configure(text=f"{duration(time.monotonic() - self.started)} elapsed")
         elif self.worker:
             self.worker = None
-            self.start_button.configure(text="Start sifting  →", state="normal")
+            self.start_button.configure(text="FIND ADDRESS", state="normal")
             self.prefix_entry.configure(state="normal")
             self.suffix_entry.configure(state="normal")
             self.engine_select.configure(state="normal")
+        self.animation_tick += 1
+        if self.animation_tick % 3 == 0:
+            self.pixel_header.animate("mining" if alive else "found" if self.result else "idle")
         if self.closing:
             if not alive and not (self.export_worker and self.export_worker.is_alive()):
                 self.destroy()
@@ -210,7 +227,7 @@ class App(ctk.CTk):
         if self.result:
             self.revealed = not self.revealed
             self.secret.configure(text="0x" + self.result.private_key.hex() if self.revealed else "Private key hidden")
-            self.reveal.configure(text="Hide key" if self.revealed else "Reveal key")
+            self.reveal.configure(text="HIDE KEY" if self.revealed else "SHOW KEY")
 
     def save_keystore(self):
         if not self.result:
@@ -226,7 +243,7 @@ class App(ctk.CTk):
             messagebox.showerror("Export failed", "Passwords must be nonempty and match.", parent=self)
             return
         # scrypt runs outside Tk so the window remains responsive.
-        self.export.configure(state="disabled", text="Encrypting…")
+        self.export.configure(state="disabled", text="SAVING...")
         self.export_worker = threading.Thread(target=self.encrypt, args=(self.result, password, destination), daemon=True)
         self.export_worker.start()
         self.after(100, self.poll_export)
@@ -243,7 +260,7 @@ class App(ctk.CTk):
         if self.export_worker.is_alive():
             self.after(100, self.poll_export)
         else:
-            self.export.configure(state="normal", text="Export encrypted keystore")
+            self.export.configure(state="normal", text="SAVE WALLET")
             self.status.configure(text=self.export_message)
 
     def on_close(self):
