@@ -1,44 +1,31 @@
 # Sifter
 
-**An address with your signature.** A local Ethereum vanity address studio
-with a compact pixel-art desktop interface, terminal commands, and CPU/OpenCL search engines.
+Local Ethereum vanity address search with a pixel-art desktop UI and CLI.
+Match a hexadecimal prefix, suffix, or both using Python CPU search or a native
+OpenCL engine. Results are checked against their private keys before display
+or export.
 
-**Status:** experimental. See [SECURITY.md](SECURITY.md) for the publication review,
-key handling, and known release limitations.
+## Search
 
-## What it does
+- Case-insensitive hexadecimal matching, with optional `0x` input.
+- Live search rate, elapsed time, and probability estimates.
+- Hidden private keys with explicit reveal and encrypted wallet export.
+- Cancellation and time limits, including native process cleanup.
 
-- Find a hexadecimal prefix, suffix, or both at once; accept mixed case and `0x`.
-- Run CPU searches everywhere supported by Python; use bundled GPU engines on
-  Apple Silicon and Intel macOS. Auto uses CPU for fewer than three characters.
-- Show live throughput, elapsed time, and a probability-based search estimate.
-- Verify each result by deriving its address from the final private key.
-- Keep keys hidden until explicitly revealed; export password-encrypted
-  Ethereum V3 keystores with scrypt. Never overwrite an existing export.
-- Cancel native GPU work when a search stops, completes, or the window closes.
-- Keep GPU caches in disposable work directories, outside the installed app.
-- Use a CLI for mining, difficulty estimates, and CPU benchmarks.
+Each additional matching hex character multiplies expected search work by 16.
+For `n` characters, the expected number of attempts is `16^n`.
 
-Vanity matching is case-insensitive, before the address checksum's capitalization.
-Every additional matching hex character multiplies the expected work by 16.
-Estimates describe probability, not a completion deadline.
-
-## Desktop
-
-Enter a prefix, a suffix, or both, then click **Find address**. **Auto** selects
-an engine. When a verified match appears, use **Copy address**, **Show key**, or
-**Save wallet** (a password-encrypted keystore). Enter starts or stops a search.
-
-The UI uses a code-drawn 8-bit sieve, a pixel wordmark, and the bundled Silkscreen
-font. The previous studio interface is preserved; see [docs/ROLLBACK.md](docs/ROLLBACK.md).
+Auto mode uses CPU for patterns shorter than three characters. Longer patterns
+use a native engine when its executable is available; otherwise they use CPU.
+Apple Silicon and Intel macOS engines are bundled. Other platforms can use CPU
+or set `SIFTER_ENGINE` to a compatible executable with `profanity.cl` and
+`keccak.cl` beside it.
 
 ## Install
 
-Python 3.10+ is required. Python 3.13 is the locally verified runtime.
-For the desktop interface, the Python installation also needs Tk:
+Requires Python 3.10+. The desktop UI also requires Tk. On macOS:
 
 ```sh
-# macOS, if Python with Tk is not already installed
 brew install python-tk@3.13
 python3.13 -m venv .venv-sifter
 source .venv-sifter/bin/activate
@@ -46,65 +33,49 @@ python -m pip install -r requirements.txt
 sifter
 ```
 
-On this checkout, double-click **Start Sifter.command** after installation.
-`python src/main.py` is retained as a compatibility launcher.
+Enter a pattern and select **Find address**. Copy the address, reveal the
+private key, or save an encrypted keystore. The interface uses CustomTkinter,
+a code-drawn sieve, and the bundled Silkscreen font.
 
-## Terminal
+## CLI
 
 ```sh
-sifter estimate --prefix c0ffee --suffix 00 --rate 100000000
+sifter mine --prefix c0f --suffix ee --keystore wallet.keystore.json
+sifter mine --suffix beef --engine cpu --timeout 30 --keystore wallet.keystore.json
+sifter estimate --prefix c0ffee --rate 100000000
 sifter benchmark --seconds 3
-sifter mine --prefix abc --engine auto --keystore ./my-wallet.keystore.json
-sifter mine --suffix beef --engine cpu --timeout 30 --keystore ./my-wallet.keystore.json
 ```
 
-Keystore passwords are entered through a hidden prompt and confirmed. Normal
-terminal results contain the address and export path. `--show-key` explicitly
-prints the secret instead of exporting; use it only when terminal output is an
-appropriate destination. The GUI provides an explicit reveal/hide action.
+Keystore export prompts for a password and confirmation. `--show-key` prints
+the private key instead of exporting a keystore. Ctrl+C stops the search.
 
-`--timeout` includes GPU initialization. Ctrl+C stops the native process.
-Exit codes: 0 success, 1 error, 2 time limit/cancellation, 130 keyboard interrupt.
+## Implementation
 
-CPU search has no engine binary dependency. On other platforms, an externally
-built profanity2 engine can be selected with `SIFTER_ENGINE=/absolute/path/to/profanity2`.
-Put its `profanity.cl` and `keccak.cl` files beside that executable.
-The bundled macOS binaries are inherited native engines; their exact source
-build revision is not documented upstream. See [THIRD_PARTY.md](THIRD_PARTY.md).
+CPU search generates private scalars with Python's `secrets` module. The GPU
+engine receives a seed public key and returns an offset; Sifter combines it
+with the private seed modulo the secp256k1 group order, then derives and checks
+the final address. Searches use no RPC provider or remote service.
+
+Exports use Ethereum V3 keystores with scrypt. Files are created exclusively,
+with POSIX permissions `0600`; existing files are never overwritten. Native
+engine caches are written to temporary directories outside the installed app.
+
+`core.py` handles matching, scalar math, and export. `miner.py` runs the search
+engines. `gui.py` and `cli.py` share that implementation under `src/sifter/`.
 
 ## Development
 
 ```sh
 python -m unittest discover -s tests -v
 python -m pip check
-python -m pip wheel --no-deps --no-build-isolation . -w dist
 ```
 
-`src/sifter/core.py` contains patterns, scalar math, and keystore export.
-`miner.py` owns CPU/GPU execution and process cleanup. `gui.py` consumes events
-on Tk's main thread. `cli.py` uses the same search and export functions.
+The 19 tests cover scalar boundaries, address verification, encrypted export,
+input validation, cancellation, and native engine errors. CI runs on Python
+3.11 and 3.13. See [BUILD.md](BUILD.md) for macOS app packaging.
 
-The regression suite covers scalar wraparound, result verification, prefix and
-suffix validation, estimates for long patterns, cancellation, engine failures,
-CR-delimited progress, secret redaction, and encrypted export/decryption.
-See [docs/VALIDATION.md](docs/VALIDATION.md) for actual local checks and limits.
-[BUILD.md](BUILD.md) describes desktop packaging.
+The bundled GPU binaries have no documented source revision. See
+[SECURITY.md](SECURITY.md) and [THIRD_PARTY.md](THIRD_PARTY.md) for details.
+[Local checks](docs/VALIDATION.md) document the tested platforms and builds.
 
-## Key handling
-
-Searches do not connect to an RPC provider or send keys to a remote service.
-The GPU engine receives only a fresh seed public key; Sifter combines its
-returned offset with the secret scalar locally modulo the secp256k1 group order.
-A result is accepted only if its derived address matches both the engine output
-and the requested pattern. This is a software implementation with tests, not
-an independent cryptographic audit.
-
-Secrets remain in process memory until exit and may be copied by the Python
-runtime; Sifter does not promise secure memory erasure. Keystore files are
-created exclusively with owner-only permissions on POSIX systems. Keep the
-password: Sifter has no recovery service.
-
-## License
-
-MIT. See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md) for the retained
-software and bundled-component notices.
+MIT. See [LICENSE](LICENSE) and [component notices](THIRD_PARTY.md).
